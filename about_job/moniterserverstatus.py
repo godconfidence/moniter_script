@@ -3,18 +3,25 @@
 # 安装步骤
 # Pip install apscheduler==3.0.3
 
-from apscheduler.schedulers.blocking import BlockingScheduler
-from datetime import datetime
+import sys
 import time
 import os
 import mysqlutil
 import requests
 import json
+import ConfigParser
+from apscheduler.schedulers.blocking import BlockingScheduler
+from datetime import datetime
 
 
 def send_msg(text,desp):
 
-    url = 'https://sc.ftqq.com/SCU10123T7fde81daf99c2f27874195d8bee93c6b596aca72e162d.send?text=%s&desp=%s' % (text,desp)
+    file = 'app.conf'
+    if os.path.exists(file):
+        cp = ConfigParser.SafeConfigParser()
+        cp.read(file)
+
+    url = 'https://sc.ftqq.com/%s.send?text=%s&desp=%s' % (cp.get('serverchan','key'), text,desp)
     requests.get(url=url)
 
 pass
@@ -87,7 +94,6 @@ def history_task():
 
 pass
 
-
 def get_notify_data():
 
     notify_info = []
@@ -105,6 +111,21 @@ def get_notify_data():
 pass
 
 def test():
+
+    file = 'app.conf'
+    if os.path.exists(file):
+        cp = ConfigParser.SafeConfigParser()
+        cp.read(file)
+    
+    text,desp = 'aa','bb'
+    url = 'https://sc.ftqq.com/%s.send?text=%s&desp=%s' % (cp.get('serverchan','key'), text,desp)
+    print url
+    # file = sys.path[0]+r'\app.conf'
+    # if os.path.exists(file):
+    #     cp = ConfigParser.SafeConfigParser()
+    #     cp.read(file)
+
+    # print cp.get('db', 'host')
     print time.time()
 pass
 

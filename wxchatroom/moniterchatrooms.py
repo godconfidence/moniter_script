@@ -4,13 +4,12 @@ from apscheduler.schedulers.blocking import BlockingScheduler
 import itchat
 import re
 import io
-# from urllib import quote
-# from urllib import *
 import requests
 import os
 import sys
 import json
 import time
+import datetime
 import traceback
 import jsonutil
 import collections
@@ -21,26 +20,48 @@ import codecs
 sys.stdout = codecs.getwriter('gb18030')(sys.stdout)
 import logging
 import logging.config
+import ConfigParser
 
 class MoniterChatRooms(object):
 
     def __init__(self,pkl_name):
-    
+
         '''
         初始化
         '''
 
+        # file = sys.path[0]+r'\app.conf'
+        file = 'app.conf'
+        if os.path.exists(file):
+            self.cp = ConfigParser.SafeConfigParser()
+            self.cp.read(file)
+            # with codecs.open(file, 'r', encoding='utf-8') as f:
+            #     cp.readfp(f)
+        else:
+            raise Exception('not app.conf')
+
+        self.pkl = pkl_name
+
         if pkl_name is None or len(pkl_name)==0:
             raise Exception('请传入session文件名')
 
-        self.pkl = pkl_name
-        print u'Pleash wait......'
-        
+        if self.cp.has_section(self.pkl) == False:
+            raise Exception('配置文件缺失')
+
+        if self.cp.has_option('DEFAULT','enableCmdQR') == False or self.cp.has_option(self.pkl,'owner_name') == False or self.cp.has_option(self.pkl,'ignore_owner_name') == False or self.cp.has_option(self.pkl,'talk_user') == False:
+            raise Exception('配置文件缺失')
+
+        print 'Init...'
+
         #显示所有的群聊，包括未保存在通讯录中的，如果去掉则只是显示在通讯录中保存的
         # itchat.dump_login_status()
         # itchat.start_receiving()
 
-        itchat.auto_login(enableCmdQR=False, hotReload=True,statusStorageDir=pkl_name+'.pkl')
+        itchat.auto_login(
+            enableCmdQR=bool(self.cp.get('DEFAULT', 'enableCmdQR')),
+            hotReload=True,
+            statusStorageDir=pkl_name + '.pkl',
+            exitCallback=self.log_out)
 
         self.headers = {
             'Accept':
@@ -53,19 +74,35 @@ class MoniterChatRooms(object):
             'Content-Type':'application/json'
         }
 
+        self.scheduler = BlockingScheduler()
+
         #群管理员微信名称
         self.repeat_user_json_filename = self.pkl+'.json'
-        self.owner_name_global = u'热爱生活的琪琪'
+        self.owner_name_global = self.cp.get(self.pkl,'owner_name')
         self.json_util = jsonutil.JsonUtil(self.repeat_user_json_filename)
-        # self.ignore_owner_name = ['班哥静听','班弟静听']
-        self.talk_user = ['班哥静听','班弟静听','李`坐忘','仙女','超','倩倩']
-        # self.ignore_owner_name = ['夏至','小长宏','乌云','仙女','星晴','冬哥','热爱生活的琪琪','懒喵','大妮子','乐巷-黄小林','赵紫琪',
-        # '福哥','周敏','迎风醉倒','马小','李昱星','阿美','Miss J','你后来没有遇到我','916','包子','丽丽','琳儿',
-        # '中医调理师马鹏飞15857840521','晓逸 Lydia','六六','徐菲菲']
-        # self.talk_user = ['班哥静听','小长宏','热爱生活的琪琪','大妮子','马小','阿美','916','丽丽']
-
+        self.ignore_owner_name = self.cp.get(self.pkl,'ignore_owner_name').split(',')
+        self.talk_user = self.cp.get(self.pkl,'talk_user').split(',')
         logging.config.fileConfig("logger.conf")
-        self.logger = logging.getLogger(__name__)
+        self.logger = logging.getLogger('commLogger')
+
+    pass
+
+
+    def log_out(self):
+
+        # 默认情况下调度器会等待所有正在运行的作业完成后，关闭所有的调度器和作业存储。如果你不想等待，可以将wait选项设置为False。
+        if self.scheduler.running == True:
+            self.scheduler.shutdown(wait=False)
+
+        # self.scheduler.get_job(job_id='xxx')
+        # self.scheduler.get_jobs()
+        # self.scheduler.remove_job(job_id='xxx')
+        # self.scheduler.remove_all_jobs()
+
+        text = self.pkl + ':退出登录'
+        desp = str(datetime.datetime.now()) +':' +self.pkl + ':退出登录'
+        url = 'https://sc.ftqq.com/%s.send?text=%s&desp=%s' % (self.cp.get('serverchan','key'), text,desp)
+        requests.get(url=url)
 
     pass
 
@@ -191,13 +228,13 @@ class MoniterChatRooms(object):
             # username.append({'key':str(x['UserName']),'val':str(x['NickName'])})
             # usernames = ','.join(username)
 
-        # json_val = {
-        #     'char_room_name':char_room_name,
-        #     'char_room_code':char_room_code,
-        #     'char_room_users':[
-        #         username
-        #     ]
-        # }
+            # json_val = {
+            #     'char_room_name':char_room_name,
+            #     'char_room_code':char_room_code,
+            #     'char_room_users':[
+            #         username
+            #     ]
+            # }
 
         return (
             user_info,
@@ -248,7 +285,7 @@ class MoniterChatRooms(object):
 
 
     def talk(self):
-        
+
         '''
         随机找好友聊天
         '''
@@ -261,19 +298,19 @@ class MoniterChatRooms(object):
             select_user = self.talk_user[user_index]
             # print select_user
             talk_user = itchat.search_friends(name=select_user)
-
             if talk_user is not None and len(talk_user)>0:
-                print u'talk about...'
+                print 'talk about...'
                 # 获取聊天内容
                 itchat.send_msg(msg='Hello'+talk_user[0]['NickName'],toUserName=talk_user[0]['UserName'])
             else:
                 # print 'not found user'
                 self.talk()
-                
-        except Exception as e:
+
+        except Exception,e:
             msg = traceback.format_exc() # 方式1
             print e
-            self.logger.error('和好友聊天出错'+msg,exc_info=True)
+            print msg
+            self.logger.error('talk error',exc_info=True)
 
     pass
 
@@ -286,6 +323,7 @@ class MoniterChatRooms(object):
 
         try:
 
+            self.logger.info('同步群聊人数')
             print time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(time.time()))
             mpsList = itchat.get_chatrooms(update=True)
             login_name = itchat.web_init()['User']['NickName']
@@ -334,17 +372,17 @@ class MoniterChatRooms(object):
 
         except Exception as e:
             msg = traceback.format_exc() # 方式1
-            print e
-            self.logger.error('刷新微信群聊出错'+msg)
+            self.logger.error('刷新微信群聊出错',exc_info=True)
 
     pass
+
 
     def endWith(self,*endstring):
 
         ends = endstring
         def run(s):
-                f = map(s.endswith,ends)
-                if True in f: return s
+            f = map(s.endswith,ends)
+            if True in f: return s
         return run
     pass
 
@@ -361,15 +399,19 @@ class MoniterChatRooms(object):
         # for i in f_file: print i,
 
         print 'Start moniter job...'
-        scheduler = BlockingScheduler()
+        # sync_hour = 0
+        # if self.cp.has_option(self.pkl,'sync_hour'):
+        #     sync_hour = self.cp.get(self.pkl,'sync_hour')
+
         # scheduler.add_job(self.fixed_time_refresh,'cron',year=2017,month = 07,day = 24,hour = 16,minute = 17,second = 57)
-        scheduler.add_job(self.refresh_chatroom,'cron',hour='0',id=self.pkl+'_refresh_chatroom')
-        scheduler.add_job(self.talk,'cron', minute='*/30', hour='*',id=self.pkl+'_talk')
+        self.scheduler.add_job(self.refresh_chatroom,'cron',hour='0',id=self.pkl+'_refresh_chatroom')
+        self.scheduler.add_job(self.talk,'cron', minute='*/30', hour='*',id=self.pkl+'_talk')
+
         print('Press Ctrl+{0} to exit'.format('Break' if os.name == 'nt' else 'C'))
         try:
-            scheduler.start()
+            self.scheduler.start()
         except (KeyboardInterrupt, SystemExit):
-            scheduler.shutdown()
+            self.scheduler.shutdown()
 
     pass
 
@@ -380,9 +422,17 @@ def main():
 
     if len(sys.argv) == 1:
         print u'请输入保存的session文件名'
+        return
 
-    moniter_chatroom = MoniterChatRooms(sys.argv[1])
-    moniter_chatroom.start_job()
+    try:
+
+        moniter_chatroom = MoniterChatRooms(sys.argv[1])
+        moniter_chatroom.start_job()
+
+    except Exception as e:
+        msg = traceback.format_exc() # 方式1
+        print e
+        print msg
 
 pass
 
